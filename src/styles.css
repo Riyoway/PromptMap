@@ -58,6 +58,11 @@ button:disabled {
   height: 100vh;
   display: flex;
   flex-direction: column;
+  user-select: none;
+}
+
+input, textarea, .prompt-box pre {
+  user-select: text;
 }
 
 .topbar {
@@ -905,6 +910,207 @@ button:disabled {
   .brand { width: 210px; }
   .leftbar, .rightbar { padding: 14px; }
   .header-actions button { padding-inline: 10px; }
+}
+
+@media (max-width: 860px) {
+  html, body, #root {
+    min-height: 100%;
+    height: auto;
+  }
+
+  body {
+    min-width: 0;
+    overflow: auto;
+    background: var(--surface-0);
+  }
+
+  .app-shell {
+    min-height: 100dvh;
+    height: auto;
+  }
+
+  .topbar {
+    height: auto;
+    min-height: 0;
+    flex: 0 0 auto;
+    padding: 12px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    position: sticky;
+    top: 0;
+  }
+
+  .brand {
+    width: 100%;
+  }
+
+  .brand span {
+    display: none;
+  }
+
+  .project-name {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    min-height: 44px;
+    margin: 0;
+    padding: 10px 12px;
+    border-color: var(--border);
+    background: var(--surface-2);
+    text-align: left;
+    font-size: 16px;
+  }
+
+  .header-actions {
+    width: 100%;
+    margin-left: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .header-actions button {
+    min-height: 44px;
+    padding: 9px 10px;
+    white-space: nowrap;
+  }
+
+  .workspace {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .canvas-area {
+    order: 1;
+    min-height: 390px;
+    height: min(62dvh, 520px);
+    padding: 12px;
+    border-bottom: 1px solid var(--border);
+    touch-action: none;
+  }
+
+  .canvas-wrap {
+    max-width: 100%;
+    max-height: 100%;
+  }
+
+  .dropzone {
+    width: 100%;
+    height: 260px;
+    max-width: 420px;
+  }
+
+  .canvas-hud {
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 6px;
+    font-size: 11px;
+  }
+
+  .canvas-hud > span {
+    display: none;
+  }
+
+  .zoom-controls {
+    flex: 1;
+    justify-content: center;
+  }
+
+  .canvas-hud button {
+    min-height: 36px;
+  }
+
+  .leftbar {
+    order: 2;
+    min-height: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .rightbar {
+    order: 3;
+    border-left: 0;
+    overflow: visible;
+  }
+
+  .panel {
+    background: rgba(13, 16, 20, .98);
+    backdrop-filter: none;
+  }
+
+  .tool-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .tool {
+    min-height: 64px;
+    height: auto;
+    padding: 8px 4px;
+  }
+
+  .selection-toolbar button,
+  .switch-row,
+  .select-menu button,
+  .delete-selection,
+  button.wide,
+  .bottom {
+    min-height: 44px;
+  }
+
+  .element-list {
+    max-height: 220px;
+  }
+
+  .element b,
+  .element small {
+    max-width: calc(100vw - 118px);
+  }
+
+  .rightbar textarea {
+    min-height: 112px;
+    height: 112px;
+    font-size: 16px;
+  }
+
+  .editor input {
+    min-height: 46px;
+    font-size: 16px;
+  }
+
+  .prompt-box pre {
+    max-height: 260px;
+    font-size: 12px;
+  }
+
+  .context-menu {
+    width: min(276px, calc(100vw - 16px));
+  }
+}
+
+@media (max-width: 430px) {
+  .topbar {
+    padding: 10px;
+  }
+
+  .header-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .tool-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .canvas-area {
+    min-height: 340px;
+    height: 54dvh;
+  }
+
 }
 
 @media (prefers-reduced-motion: reduce) {

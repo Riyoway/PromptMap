@@ -31,6 +31,7 @@ import './styles.css';
 
 const CANVAS_W = 1100;
 const CANVAS_H = 680;
+const CANVAS_RATIO = CANVAS_W / CANVAS_H;
 const MIN_ZOOM = .25;
 const MAX_ZOOM = 4;
 
@@ -94,6 +95,7 @@ function App() {
   const [isPanning, setIsPanning] = useState(false);
   const [isDraggingImage, setIsDraggingImage] = useState(false);
   const [isExportingZip, setIsExportingZip] = useState(false);
+  const [canvasSize, setCanvasSize] = useState({width: CANVAS_W, height: CANVAS_H});
   const stageRef = useRef<Konva.Stage>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const projectRef = useRef<HTMLInputElement>(null);
@@ -166,12 +168,36 @@ function App() {
     return () => window.removeEventListener('wheel', blockBrowserZoom, { capture: true });
   }, []);
 
+  useEffect(() => {
+    const canvasArea = canvasAreaRef.current;
+    if (!canvasArea) return;
+
+    const updateCanvasSize = () => {
+      const rect = canvasArea.getBoundingClientRect();
+      const availableWidth = Math.max(300, rect.width - 24);
+      const availableHeight = Math.max(220, rect.height - 24);
+      const scale = Math.min(1, availableWidth / CANVAS_W, availableHeight / CANVAS_H);
+      const width = Math.max(300, Math.round(CANVAS_W * scale));
+      const height = Math.max(220, Math.round(width / CANVAS_RATIO));
+      setCanvasSize(current => current.width === width && current.height === height ? current : {width, height});
+    };
+
+    updateCanvasSize();
+    const observer = new ResizeObserver(updateCanvasSize);
+    observer.observe(canvasArea);
+    window.addEventListener('orientationchange', updateCanvasSize);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('orientationchange', updateCanvasSize);
+    };
+  }, []);
+
   const fit = useMemo(() => {
-    if (!image) return { x: 0, y: 0, width: CANVAS_W, height: CANVAS_H };
-    const scale = Math.min(CANVAS_W / image.width, CANVAS_H / image.height);
+    if (!image) return { x: 0, y: 0, width: canvasSize.width, height: canvasSize.height };
+    const scale = Math.min(canvasSize.width / image.width, canvasSize.height / image.height);
     const width = image.width * scale, height = image.height * scale;
-    return { x: (CANVAS_W-width)/2, y:(CANVAS_H-height)/2, width, height };
-  }, [image]);
+    return { x: (canvasSize.width-width)/2, y:(canvasSize.height-height)/2, width, height };
+  }, [canvasSize.height, canvasSize.width, image]);
 
   function uploadImage(file?: File) {
     if (!file || !file.type.startsWith('image/')) return;
@@ -470,10 +496,10 @@ function App() {
           </div>
           {(viewport.x !== 0 || viewport.y !== 0 || viewport.scale !== 1) && <button onClick={resetViewport}><Focus size={14}/> Reset view</button>}
         </div>}
-        <div className="canvas-wrap" style={{display:image?'block':'none', transform:`translate3d(${viewport.x}px, ${viewport.y}px, 0) scale(${viewport.scale})`}}>
-          <Stage ref={stageRef} width={CANVAS_W} height={CANVAS_H} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp}>
+        <div className="canvas-wrap" style={{display:image?'block':'none', width:canvasSize.width, height:canvasSize.height, transform:`translate3d(${viewport.x}px, ${viewport.y}px, 0) scale(${viewport.scale})`}}>
+          <Stage ref={stageRef} width={canvasSize.width} height={canvasSize.height} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp}>
             <Layer>
-              {image && <><Rect name="canvas-surface" x={0} y={0} width={CANVAS_W} height={CANVAS_H} fill="#11151a"/><KonvaImage name="canvas-surface" image={image} {...fit}/></>}
+              {image && <><Rect name="canvas-surface" x={0} y={0} width={canvasSize.width} height={canvasSize.height} fill="#11151a"/><KonvaImage name="canvas-surface" image={image} {...fit}/></>}
               {store.elements.map((e,i)=><Annotation key={e.id} e={e} index={i} fit={fit} selected={store.selectedIds.includes(e.id)} editable={store.tool==='select'} onSelect={additive=>store.select(e.id, additive && store.tool==='select')} onChange={(patch)=>store.updateElement(e.id,patch)}/>) }
               {draftBox && <Rect listening={false} x={fit.x+draftBox.x*fit.width} y={fit.y+draftBox.y*fit.height} width={draftBox.w*fit.width} height={draftBox.h*fit.height} stroke="#fff" dash={[8,6]} fill="rgba(255,255,255,.08)"/>}
               {selectionBox && (()=>{const selection=normalizedRect(selectionBox);return <Rect listening={false} x={fit.x+selection.x*fit.width} y={fit.y+selection.y*fit.height} width={selection.width*fit.width} height={selection.height*fit.height} stroke="#8ac8ff" strokeWidth={1.5} dash={[5,4]} fill="rgba(138,200,255,.12)"/>})()}
