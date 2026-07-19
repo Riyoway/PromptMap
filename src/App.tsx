@@ -97,6 +97,7 @@ function App() {
   const stageRef = useRef<Konva.Stage>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const projectRef = useRef<HTMLInputElement>(null);
+  const canvasAreaRef = useRef<HTMLElement>(null);
   const panRef = useRef<{pointerX:number;pointerY:number;offsetX:number;offsetY:number;moved:boolean} | null>(null);
   const lastPanMovedRef = useRef(false);
   const dragDepthRef = useRef(0);
@@ -156,6 +157,15 @@ function App() {
     return () => window.removeEventListener('keydown', keydown);
   }, [store]);
 
+  useEffect(() => {
+    const blockBrowserZoom = (event: WheelEvent) => {
+      if (!event.ctrlKey || !canvasAreaRef.current?.contains(event.target as Node)) return;
+      event.preventDefault();
+    };
+    window.addEventListener('wheel', blockBrowserZoom, { capture: true, passive: false });
+    return () => window.removeEventListener('wheel', blockBrowserZoom, { capture: true });
+  }, []);
+
   const fit = useMemo(() => {
     if (!image) return { x: 0, y: 0, width: CANVAS_W, height: CANVAS_H };
     const scale = Math.min(CANVAS_W / image.width, CANVAS_H / image.height);
@@ -187,13 +197,17 @@ function App() {
     if (event.evt.button !== 0) return;
     if (event.target !== event.target.getStage() && event.target.name() !== 'canvas-surface') return;
     const p = pointerPos();
-    if (!p || p.x<0 || p.y<0 || p.x>1 || p.y>1) return;
+    if (!p) return;
+    const isInsideImage = p.x >= 0 && p.y >= 0 && p.x <= 1 && p.y <= 1;
+    if (store.tool === 'select') {
+      setSelectionBox({x:p.x,y:p.y,w:0,h:0});
+      return;
+    }
+    if (!isInsideImage) return;
     if (store.tool === 'pin') {
       store.addElement({ id:uid(), label:elementLabel(store.elements.length), type:'pin', x:p.x, y:p.y, prompt:'', strength:'exact', allowOverflow:false, preserveAspectRatio:true });
     } else if (store.tool === 'box') {
       setDraftBox({x:p.x,y:p.y,w:0,h:0});
-    } else {
-      setSelectionBox({x:p.x,y:p.y,w:0,h:0});
     }
   }
 
@@ -433,6 +447,7 @@ function App() {
       </aside>
 
       <section
+        ref={canvasAreaRef}
         className={['canvas-area', isPanning ? 'is-panning' : '', isDraggingImage ? 'is-dragging-image' : ''].filter(Boolean).join(' ')}
         data-tool={store.tool}
         onPointerDown={beginPan}
@@ -472,7 +487,7 @@ function App() {
         <textarea aria-label="Project direction" placeholder="Describe the overall image, mood, and goal..." value={store.globalPrompt} onChange={e=>store.setGlobalPrompt(e.target.value)} />
         {selected ? <ElementEditor element={selected} update={(p)=>store.updateElement(selected.id,p)} remove={()=>store.removeElement(selected.id)} /> : selectedElements.length > 1 ? <MultiSelectionEditor elements={selectedElements} remove={store.removeSelected}/> : <div className="inspector-empty"><Sparkles size={28}/><b>Select an element</b><span>Drag across the canvas or Shift-click to select multiple.</span></div>}
         <div className="prompt-box">
-          <div className="section-title row">Compiled prompt <button className="icon-btn" aria-label="Copy compiled prompt" data-tooltip="Copy" onClick={()=>navigator.clipboard.writeText(prompt)}><Copy size={15}/></button></div>
+          <div className="section-title row">Compiled prompt</div>
           <pre>{prompt}</pre>
           <button className="wide" onClick={()=>navigator.clipboard.writeText(prompt)}><Copy size={16}/> Copy prompt</button>
         </div>
