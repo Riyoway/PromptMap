@@ -95,12 +95,14 @@ function App() {
   const [isPanning, setIsPanning] = useState(false);
   const [isDraggingImage, setIsDraggingImage] = useState(false);
   const [isExportingZip, setIsExportingZip] = useState(false);
+  const [copyMessage, setCopyMessage] = useState<string>();
   const [canvasSize, setCanvasSize] = useState({width: CANVAS_W, height: CANVAS_H});
   const stageRef = useRef<Konva.Stage>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const projectRef = useRef<HTMLInputElement>(null);
   const canvasAreaRef = useRef<HTMLElement>(null);
   const panRef = useRef<{pointerX:number;pointerY:number;offsetX:number;offsetY:number;moved:boolean} | null>(null);
+  const copyTimerRef = useRef<number | undefined>(undefined);
   const lastPanMovedRef = useRef(false);
   const dragDepthRef = useRef(0);
   const prompt = useMemo(() => compilePrompt(store.globalPrompt, store.elements), [store.globalPrompt, store.elements]);
@@ -158,6 +160,10 @@ function App() {
     window.addEventListener('keydown', keydown);
     return () => window.removeEventListener('keydown', keydown);
   }, [store]);
+
+  useEffect(() => () => {
+    if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+  }, []);
 
   useEffect(() => {
     const blockBrowserZoom = (event: WheelEvent) => {
@@ -325,6 +331,31 @@ function App() {
     } finally {
       setIsExportingZip(false);
     }
+  }
+
+  async function copyPrompt() {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(prompt);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = prompt;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        const copied = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        if (!copied) throw new Error('Copy command failed');
+      }
+      setCopyMessage('コピーしました！');
+    } catch {
+      setCopyMessage('コピーできませんでした');
+    }
+
+    if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = window.setTimeout(() => setCopyMessage(undefined), 1800);
   }
 
   function loadProject(file?: File) {
@@ -515,7 +546,7 @@ function App() {
         <div className="prompt-box">
           <div className="section-title row">Compiled prompt</div>
           <pre>{prompt}</pre>
-          <button className="wide" onClick={()=>navigator.clipboard.writeText(prompt)}><Copy size={16}/> Copy prompt</button>
+          <button className="wide" onClick={copyPrompt}><Copy size={16}/> Copy prompt</button>
         </div>
       </aside>
     </main>
@@ -531,6 +562,7 @@ function App() {
       <div className="context-divider"/>
       <button role="menuitem" disabled={viewport.x===0&&viewport.y===0&&viewport.scale===1} onClick={()=>{resetViewport();setContextMenu(undefined)}}><Focus size={16}/><span>Reset view<small>100%</small></span></button>
     </div>}
+    {copyMessage && <div className="toast" role="status" aria-live="polite"><Check size={16}/>{copyMessage}</div>}
   </div>;
 }
 
