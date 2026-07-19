@@ -467,6 +467,47 @@ button:disabled {
 .dropzone:hover { border-color: #7b8794; background: #171c22; }
 .dropzone span { color: var(--text-dim); font-size: 11px; }
 
+.drop-overlay {
+  position: absolute;
+  inset: 16px;
+  z-index: 8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px dashed rgba(255,255,255,.78);
+  border-radius: 18px;
+  color: #f8fafc;
+  background: rgba(9,11,14,.72);
+  box-shadow: inset 0 0 0 1px rgba(138,200,255,.18), 0 24px 80px rgba(0,0,0,.38);
+  backdrop-filter: blur(14px);
+  pointer-events: none;
+  animation: drop-overlay-in 160ms ease-out;
+}
+
+.drop-overlay svg {
+  color: #d8ecff;
+  filter: drop-shadow(0 8px 18px rgba(138,200,255,.18));
+}
+
+.drop-overlay b {
+  font-size: 14px;
+  font-weight: 780;
+}
+
+.drop-overlay span {
+  color: #aab5c0;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.canvas-area.is-dragging-image .dropzone,
+.canvas-area.is-dragging-image .canvas-wrap {
+  border-color: #dfefff;
+  box-shadow: 0 28px 90px rgba(0,0,0,.55), 0 0 0 1px rgba(138,200,255,.28);
+}
+
 .rightbar textarea {
   width: 100%;
   height: 96px;
@@ -812,6 +853,11 @@ button:disabled {
 @keyframes context-menu-in {
   from { opacity: 0; transform: translateY(-4px) scale(.97); }
   to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes drop-overlay-in {
+  from { opacity: 0; transform: scale(.985); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 .prompt-box {

@@ -21,10 +21,11 @@ import {
   ZoomIn,
   ZoomOut,
   CheckSquare2,
-  X
+  X,
+  FileArchive
 } from 'lucide-react';
 import { useAppStore } from './store';
-import { compilePrompt, downloadText, elementLabel, makeProject, uid } from './utils';
+import { compilePrompt, createZip, downloadBlob, downloadText, elementLabel, makeProject, slugify, uid } from './utils';
 import type { MapElement, ProjectData, Strength } from './types';
 import './styles.css';
 
@@ -45,20 +46,60 @@ function normalizedRect(rect:DraftRect) {
   };
 }
 
+function safeAssetName(name: string, fallback: string) {
+  const dotIndex = name.lastIndexOf('.');
+  const base = dotIndex > 0 ? name.slice(0, dotIndex) : name;
+  const extension = dotIndex > 0 ? name.slice(dotIndex).toLowerCase().replace(/[^\w.]+/g, '') : '';
+  return `${slugify(base) || fallback}${extension}`;
+}
+
+function makePromptMarkdown(projectName: string, prompt: string, elements: MapElement[], referenceName?: string, hasAnnotatedImage = false) {
+  const lines = [
+    `# ${projectName || 'PromptMap'}`,
+    '',
+    '## Prompt',
+    '',
+    '```text',
+    prompt,
+    '```',
+    '',
+    '## Assets',
+    '',
+    referenceName ? `- Reference image: \`images/${safeAssetName(referenceName, 'reference-image')}\`` : '',
+    hasAnnotatedImage ? '- Annotated image: `images/*-annotated.png`' : '',
+    '',
+    '## Annotations',
+    '',
+    '| Label | Type | Prompt | Strength | Position |',
+    '| --- | --- | --- | --- | --- |',
+    ...elements.map(element => {
+      const position = element.type === 'pin'
+        ? `x ${Math.round(element.x * 100)}%, y ${Math.round(element.y * 100)}%`
+        : `x ${Math.round(element.x * 100)}%, y ${Math.round(element.y * 100)}%, w ${Math.round((element.width ?? 0) * 100)}%, h ${Math.round((element.height ?? 0) * 100)}%`;
+      return `| ${element.label} | ${element.type} | ${(element.prompt || 'Place the intended element here.').replaceAll('|', '\\|')} | ${element.strength} | ${position} |`;
+    })
+  ];
+  return `${lines.filter((line, index, array) => line !== '' || array[index - 1] !== '').join('\n')}\n`;
+}
+
 function App() {
   const store = useAppStore();
   const [image, setImage] = useState<HTMLImageElement>();
   const [imageName, setImageName] = useState<string>();
+  const [imageFile, setImageFile] = useState<File>();
   const [draftBox, setDraftBox] = useState<DraftRect>();
   const [selectionBox, setSelectionBox] = useState<DraftRect>();
   const [contextMenu, setContextMenu] = useState<ContextMenuState>();
   const [viewport, setViewport] = useState({x:0,y:0,scale:1});
   const [isPanning, setIsPanning] = useState(false);
+  const [isDraggingImage, setIsDraggingImage] = useState(false);
+  const [isExportingZip, setIsExportingZip] = useState(false);
   const stageRef = useRef<Konva.Stage>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const projectRef = useRef<HTMLInputElement>(null);
   const panRef = useRef<{pointerX:number;pointerY:number;offsetX:number;offsetY:number;moved:boolean} | null>(null);
   const lastPanMovedRef = useRef(false);
+  const dragDepthRef = useRef(0);
   const prompt = useMemo(() => compilePrompt(store.globalPrompt, store.elements), [store.globalPrompt, store.elements]);
   const selectedElements = store.elements.filter(element => store.selectedIds.includes(element.id));
   const selected = selectedElements.length === 1 ? selectedElements[0] : undefined;
@@ -123,12 +164,13 @@ function App() {
   }, [image]);
 
   function uploadImage(file?: File) {
-    if (!file) return;
+    if (!file || !file.type.startsWith('image/')) return;
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
       setImage(img);
       setImageName(file.name);
+      setImageFile(file);
       setViewport({x:0,y:0,scale:1});
       URL.revokeObjectURL(url);
     };
@@ -198,13 +240,51 @@ function App() {
     const uri = stageRef.current?.toDataURL({ pixelRatio: 2 });
     if (!uri) return;
     const a = document.createElement('a');
-    a.download = `${store.projectName.replace(/\s+/g,'-').toLowerCase()}-annotated.png`;
+    a.download = `${slugify(store.projectName)}-annotated.png`;
     a.href = uri;
     a.click();
   }
 
   function saveProject() {
-    downloadText(`${store.projectName.replace(/\s+/g,'-').toLowerCase()}.promptmap.json`, JSON.stringify(makeProject(store.projectName, store.globalPrompt, store.elements, imageName), null, 2));
+    downloadText(`${slugify(store.projectName)}.promptmap.json`, JSON.stringify(makeProject(store.projectName, store.globalPrompt, store.elements, imageName), null, 2));
+  }
+
+  async function exportZip() {
+    if (isExportingZip) return;
+    setIsExportingZip(true);
+    const projectSlug = slugify(store.projectName);
+    try {
+      const annotatedDataUrl = stageRef.current?.toDataURL({ pixelRatio: 2 });
+      const entries: {path:string;data:Blob | ArrayBuffer | Uint8Array | string}[] = [
+        {
+          path: 'prompt.md',
+          data: makePromptMarkdown(store.projectName, prompt, store.elements, imageFile?.name, Boolean(annotatedDataUrl))
+        },
+        {
+          path: 'project.promptmap.json',
+          data: JSON.stringify(makeProject(store.projectName, store.globalPrompt, store.elements, imageName), null, 2)
+        }
+      ];
+
+      if (imageFile) {
+        entries.push({
+          path: `images/${safeAssetName(imageFile.name, 'reference-image')}`,
+          data: imageFile
+        });
+      }
+
+      if (annotatedDataUrl) {
+        entries.push({
+          path: `images/${projectSlug}-annotated.png`,
+          data: await fetch(annotatedDataUrl).then(response => response.blob())
+        });
+      }
+
+      const zip = await createZip(entries);
+      downloadBlob(`${projectSlug}.zip`, zip);
+    } finally {
+      setIsExportingZip(false);
+    }
   }
 
   function loadProject(file?: File) {
@@ -213,8 +293,41 @@ function App() {
       const p = JSON.parse(t) as ProjectData;
       store.loadProject(p);
       setImageName(p.imageName);
+      setImageFile(undefined);
       setViewport({x:0,y:0,scale:1});
     });
+  }
+
+  function hasImageDrag(event: React.DragEvent<HTMLElement>) {
+    return Array.from(event.dataTransfer.items).some(item => item.kind === 'file' && item.type.startsWith('image/'));
+  }
+
+  function onImageDragEnter(event: React.DragEvent<HTMLElement>) {
+    if (!hasImageDrag(event)) return;
+    event.preventDefault();
+    dragDepthRef.current += 1;
+    setIsDraggingImage(true);
+  }
+
+  function onImageDragOver(event: React.DragEvent<HTMLElement>) {
+    if (!hasImageDrag(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  }
+
+  function onImageDragLeave(event: React.DragEvent<HTMLElement>) {
+    if (!hasImageDrag(event)) return;
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDraggingImage(false);
+  }
+
+  function onImageDrop(event: React.DragEvent<HTMLElement>) {
+    const file = Array.from(event.dataTransfer.files).find(candidate => candidate.type.startsWith('image/'));
+    if (!file) return;
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDraggingImage(false);
+    uploadImage(file);
   }
 
   function beginPan(event: React.PointerEvent<HTMLElement>) {
@@ -292,6 +405,7 @@ function App() {
         <button onClick={()=>projectRef.current?.click()}><FolderOpen size={16}/> Open</button>
         <button onClick={saveProject}><Save size={16}/> Save</button>
         <button className="primary" disabled={!image} onClick={exportPng}><Download size={16}/> Export PNG</button>
+        <button className="primary" disabled={!image || isExportingZip} onClick={exportZip}><FileArchive size={16}/> {isExportingZip ? 'Exporting' : 'Export ZIP'}</button>
       </div>
     </header>
 
@@ -319,14 +433,19 @@ function App() {
       </aside>
 
       <section
-        className={isPanning ? 'canvas-area is-panning' : 'canvas-area'}
+        className={['canvas-area', isPanning ? 'is-panning' : '', isDraggingImage ? 'is-dragging-image' : ''].filter(Boolean).join(' ')}
         data-tool={store.tool}
         onPointerDown={beginPan}
         onWheel={zoomCanvas}
         onContextMenu={openContextMenu}
+        onDragEnter={onImageDragEnter}
+        onDragOver={onImageDragOver}
+        onDragLeave={onImageDragLeave}
+        onDrop={onImageDrop}
         aria-label="Annotation canvas"
       >
         {!image && <button className="dropzone" onClick={()=>fileRef.current?.click()}><Upload size={34}/><b>Upload a reference image</b><span>PNG, JPG, WEBP</span></button>}
+        {isDraggingImage && <div className="drop-overlay" aria-live="polite"><ImagePlus size={30}/><b>Drop image</b><span>{image ? 'Replace reference image' : 'Add reference image'}</span></div>}
         {image && <div className="canvas-hud" aria-label="Canvas navigation">
           <span><Move size={14}/> Right-drag · Wheel to zoom</span>
           <div className="zoom-controls" aria-label="Zoom controls">
@@ -359,8 +478,8 @@ function App() {
         </div>
       </aside>
     </main>
-    <input ref={fileRef} type="file" accept="image/*" hidden onChange={e=>uploadImage(e.target.files?.[0])}/>
-    <input ref={projectRef} type="file" accept="application/json,.json" hidden onChange={e=>loadProject(e.target.files?.[0])}/>
+    <input ref={fileRef} type="file" accept="image/*" hidden onChange={e=>{uploadImage(e.target.files?.[0]); e.currentTarget.value = '';}}/>
+    <input ref={projectRef} type="file" accept="application/json,.json" hidden onChange={e=>{loadProject(e.target.files?.[0]); e.currentTarget.value = '';}}/>
     {contextMenu && <div className="context-menu" role="menu" aria-label="Canvas actions" style={{left:contextMenu.x,top:contextMenu.y}} onContextMenu={event=>event.preventDefault()}>
       <div className="context-menu-header"><span><MousePointer2 size={15}/>{contextMenu.targetId?'Selection':'Canvas'}</span><small>{store.selectedIds.length ? `${store.selectedIds.length} selected` : 'No selection'}</small></div>
       <button role="menuitem" disabled={!store.elements.length} onClick={()=>{store.selectAll();setContextMenu(undefined)}}><CheckSquare2 size={16}/><span>Select all<small>Ctrl / Cmd + A</small></span></button>
