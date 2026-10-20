@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Agent skills / local agent config
+.agents/
+
 # Build output
 dist/
 *.tsbuildinfo
