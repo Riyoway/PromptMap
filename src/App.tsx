@@ -21,6 +21,7 @@ import {
   ZoomIn,
   ZoomOut,
   CheckSquare2,
+  CircleAlert,
   X,
   FileArchive
 } from 'lucide-react';
@@ -95,7 +96,7 @@ function App() {
   const [isPanning, setIsPanning] = useState(false);
   const [isDraggingImage, setIsDraggingImage] = useState(false);
   const [isExportingZip, setIsExportingZip] = useState(false);
-  const [copyMessage, setCopyMessage] = useState<string>();
+  const [copyMessage, setCopyMessage] = useState<{text:string;kind:'success'|'error'}>();
   const [canvasSize, setCanvasSize] = useState({width: CANVAS_W, height: CANVAS_H});
   const stageRef = useRef<Konva.Stage>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -163,6 +164,14 @@ function App() {
 
   useEffect(() => () => {
     if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    document.fonts?.ready.then(() => {
+      if (!cancelled) stageRef.current?.batchDraw();
+    });
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -349,9 +358,9 @@ function App() {
         document.body.removeChild(textarea);
         if (!copied) throw new Error('Copy command failed');
       }
-      setCopyMessage('コピーしました！');
+      setCopyMessage({text:'コピーしました！', kind:'success'});
     } catch {
-      setCopyMessage('コピーできませんでした');
+      setCopyMessage({text:'コピーできませんでした', kind:'error'});
     }
 
     if (copyTimerRef.current) window.clearTimeout(copyTimerRef.current);
@@ -475,8 +484,8 @@ function App() {
       <div className="header-actions">
         <button onClick={()=>projectRef.current?.click()}><FolderOpen size={16}/> Open</button>
         <button onClick={saveProject}><Save size={16}/> Save</button>
-        <button className="primary" disabled={!image} onClick={exportPng}><Download size={16}/> Export PNG</button>
-        <button className="primary" disabled={!image || isExportingZip} onClick={exportZip}><FileArchive size={16}/> {isExportingZip ? 'Exporting' : 'Export ZIP'}</button>
+        <button disabled={!image} onClick={exportPng}><Download size={16}/> Export PNG</button>
+        <button className={isExportingZip ? 'primary pending' : 'primary'} disabled={!image || isExportingZip} onClick={exportZip}><FileArchive size={16}/> {isExportingZip ? 'Exporting' : 'Export ZIP'}</button>
       </div>
     </header>
 
@@ -530,10 +539,10 @@ function App() {
         <div className="canvas-wrap" style={{display:image?'block':'none', width:canvasSize.width, height:canvasSize.height, transform:`translate3d(${viewport.x}px, ${viewport.y}px, 0) scale(${viewport.scale})`}}>
           <Stage ref={stageRef} width={canvasSize.width} height={canvasSize.height} onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp}>
             <Layer>
-              {image && <><Rect name="canvas-surface" x={0} y={0} width={canvasSize.width} height={canvasSize.height} fill="#11151a"/><KonvaImage name="canvas-surface" image={image} {...fit}/></>}
+              {image && <><Rect name="canvas-surface" x={0} y={0} width={canvasSize.width} height={canvasSize.height} fill="#0a0a0b"/><KonvaImage name="canvas-surface" image={image} {...fit}/></>}
               {store.elements.map((e,i)=><Annotation key={e.id} e={e} index={i} fit={fit} selected={store.selectedIds.includes(e.id)} editable={store.tool==='select'} onSelect={additive=>store.select(e.id, additive && store.tool==='select')} onChange={(patch)=>store.updateElement(e.id,patch)}/>) }
               {draftBox && <Rect listening={false} x={fit.x+draftBox.x*fit.width} y={fit.y+draftBox.y*fit.height} width={draftBox.w*fit.width} height={draftBox.h*fit.height} stroke="#fff" dash={[8,6]} fill="rgba(255,255,255,.08)"/>}
-              {selectionBox && (()=>{const selection=normalizedRect(selectionBox);return <Rect listening={false} x={fit.x+selection.x*fit.width} y={fit.y+selection.y*fit.height} width={selection.width*fit.width} height={selection.height*fit.height} stroke="#8ac8ff" strokeWidth={1.5} dash={[5,4]} fill="rgba(138,200,255,.12)"/>})()}
+              {selectionBox && (()=>{const selection=normalizedRect(selectionBox);return <Rect listening={false} x={fit.x+selection.x*fit.width} y={fit.y+selection.y*fit.height} width={selection.width*fit.width} height={selection.height*fit.height} stroke="#70b8ff" strokeWidth={1.5} dash={[5,4]} fill="rgba(112,184,255,.14)"/>})()}
             </Layer>
           </Stage>
         </div>
@@ -562,7 +571,7 @@ function App() {
       <div className="context-divider"/>
       <button role="menuitem" disabled={viewport.x===0&&viewport.y===0&&viewport.scale===1} onClick={()=>{resetViewport();setContextMenu(undefined)}}><Focus size={16}/><span>Reset view<small>100%</small></span></button>
     </div>}
-    {copyMessage && <div className="toast" role="status" aria-live="polite"><Check size={16}/>{copyMessage}</div>}
+    {copyMessage && <div className={copyMessage.kind === 'error' ? 'toast error' : 'toast'} role="status" aria-live="polite">{copyMessage.kind === 'error' ? <CircleAlert size={16}/> : <Check size={16}/>}{copyMessage.text}</div>}
   </div>;
 }
 
@@ -576,16 +585,16 @@ function Annotation({e,index,fit,selected,editable,onSelect,onChange}:{e:MapElem
   if (e.type === 'pin') {
     const x = fit.x+e.x*fit.width, y = fit.y+e.y*fit.height;
     return <>
-      <Circle name={`annotation:${e.id}`} x={x} y={y} radius={17} fill={selected?'#fff':'#111'} stroke="#fff" strokeWidth={2} draggable={editable} onClick={event=>onSelect(event.evt.shiftKey)} onTap={()=>onSelect(false)} onDragEnd={ev=>onChange({x:(ev.target.x()-fit.x)/fit.width,y:(ev.target.y()-fit.y)/fit.height})}/>
-      <Text x={x-17} y={y-17} width={34} height={34} align="center" verticalAlign="middle" text={e.label||elementLabel(index)} fill={selected?'#111':'#fff'} fontFamily="Arial, sans-serif" fontStyle="bold" fontSize={15} listening={false}/>
+      <Circle name={`annotation:${e.id}`} x={x} y={y} radius={17} fill={selected?'#fdfdfd':'#000'} stroke="#fdfdfd" strokeWidth={2} draggable={editable} onClick={event=>onSelect(event.evt.shiftKey)} onTap={()=>onSelect(false)} onDragEnd={ev=>onChange({x:(ev.target.x()-fit.x)/fit.width,y:(ev.target.y()-fit.y)/fit.height})}/>
+      <Text x={x-17} y={y-17} width={34} height={34} align="center" verticalAlign="middle" text={e.label||elementLabel(index)} fill={selected?'#000':'#fdfdfd'} fontFamily="'Inter Variable', Inter, Arial, sans-serif" fontStyle="bold" fontSize={15} listening={false}/>
     </>;
   }
   const x = fit.x+e.x*fit.width, y = fit.y+e.y*fit.height, w = (e.width??.2)*fit.width, h = (e.height??.15)*fit.height;
   return <>
     <Rect name={`annotation:${e.id}`} ref={shapeRef} x={x} y={y} width={w} height={h} fill="rgba(0,0,0,.22)" stroke="#fff" strokeWidth={selected?3:2} dash={selected?[]:[9,6]} draggable={editable} onClick={event=>onSelect(event.evt.shiftKey)} onTap={()=>onSelect(false)} onDragEnd={ev=>onChange({x:(ev.target.x()-fit.x)/fit.width,y:(ev.target.y()-fit.y)/fit.height})} onTransformEnd={()=>{const n=shapeRef.current;if(!n)return;const sx=n.scaleX(),sy=n.scaleY();n.scaleX(1);n.scaleY(1);onChange({x:(n.x()-fit.x)/fit.width,y:(n.y()-fit.y)/fit.height,width:Math.max(.01,n.width()*sx/fit.width),height:Math.max(.01,n.height()*sy/fit.height)})}}/>
-    <Rect x={x+8} y={y+8} width={30} height={30} fill="#fff" cornerRadius={15} listening={false}/>
-    <Text x={x+8} y={y+8} width={30} height={30} align="center" verticalAlign="middle" text={e.label||elementLabel(index)} fill="#111" fontFamily="Arial, sans-serif" fontStyle="bold" fontSize={15} listening={false}/>
-    {selected && editable && <Transformer ref={trRef} nodes={shapeRef.current?[shapeRef.current]:[]} rotateEnabled={false} borderStroke="#fff" anchorStroke="#111" anchorFill="#fff"/>}
+    <Rect x={x+8} y={y+8} width={30} height={30} fill="#fdfdfd" cornerRadius={15} listening={false}/>
+    <Text x={x+8} y={y+8} width={30} height={30} align="center" verticalAlign="middle" text={e.label||elementLabel(index)} fill="#000" fontFamily="'Inter Variable', Inter, Arial, sans-serif" fontStyle="bold" fontSize={15} listening={false}/>
+    {selected && editable && <Transformer ref={trRef} nodes={shapeRef.current?[shapeRef.current]:[]} rotateEnabled={false} borderStroke="#fdfdfd" anchorStroke="#000" anchorFill="#fdfdfd"/>}
   </>;
 }
 
